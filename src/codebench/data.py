@@ -9,8 +9,12 @@ from .core import (
     AgentSubmission,
     BenchmarkHarness,
     CodeTask,
+    ComplexityScore,
     ExecutionResult,
     TaskDifficulty,
+    TestCategory,
+    TestResult,
+    TestSuite,
 )
 
 SAMPLE_TASKS: List[dict] = [
@@ -59,6 +63,51 @@ SAMPLE_TASKS: List[dict] = [
         "reference_solution": "from collections import OrderedDict\n\nclass LRUCache:\n    def __init__(self, capacity):\n        self.capacity = capacity\n        self.cache = OrderedDict()\n    def get(self, key):\n        if key not in self.cache:\n            return -1\n        self.cache.move_to_end(key)\n        return self.cache[key]\n    def put(self, key, value):\n        if key in self.cache:\n            self.cache.move_to_end(key)\n        self.cache[key] = value\n        if len(self.cache) > self.capacity:\n            self.cache.popitem(last=False)\n",
         "tags": ["data-structures", "caching", "design"],
     },
+    {
+        "task_id": "task-006",
+        "repo": "anote-ai/sort-lib",
+        "description": "Implement merge sort on a list of integers. Return a new sorted list.",
+        "difficulty": "easy",
+        "test_file": "tests/test_mergesort.py",
+        "reference_solution": "def merge_sort(arr):\n    if len(arr) <= 1:\n        return arr\n    mid = len(arr) // 2\n    left = merge_sort(arr[:mid])\n    right = merge_sort(arr[mid:])\n    result = []\n    i = j = 0\n    while i < len(left) and j < len(right):\n        if left[i] <= right[j]:\n            result.append(left[i]); i += 1\n        else:\n            result.append(right[j]); j += 1\n    result.extend(left[i:])\n    result.extend(right[j:])\n    return result\n",
+        "tags": ["algorithms", "sorting", "divide-and-conquer"],
+    },
+    {
+        "task_id": "task-007",
+        "repo": "anote-ai/trie-lib",
+        "description": "Implement a Trie data structure supporting insert(word), search(word), and starts_with(prefix).",
+        "difficulty": "medium",
+        "test_file": "tests/test_trie.py",
+        "reference_solution": "class TrieNode:\n    def __init__(self):\n        self.children = {}\n        self.is_end = False\n\nclass Trie:\n    def __init__(self):\n        self.root = TrieNode()\n    def insert(self, word):\n        node = self.root\n        for ch in word:\n            node = node.children.setdefault(ch, TrieNode())\n        node.is_end = True\n    def search(self, word):\n        node = self.root\n        for ch in word:\n            if ch not in node.children:\n                return False\n            node = node.children[ch]\n        return node.is_end\n    def starts_with(self, prefix):\n        node = self.root\n        for ch in prefix:\n            if ch not in node.children:\n                return False\n            node = node.children[ch]\n        return True\n",
+        "tags": ["data-structures", "trie", "strings"],
+    },
+    {
+        "task_id": "task-008",
+        "repo": "anote-ai/api-client",
+        "description": "Write a retry decorator that retries a function up to N times on exception, with exponential backoff.",
+        "difficulty": "medium",
+        "test_file": "tests/test_retry.py",
+        "reference_solution": "import time\nimport functools\n\ndef retry(max_attempts=3, backoff=2.0):\n    def decorator(fn):\n        @functools.wraps(fn)\n        def wrapper(*args, **kwargs):\n            delay = 1.0\n            for attempt in range(max_attempts):\n                try:\n                    return fn(*args, **kwargs)\n                except Exception:\n                    if attempt == max_attempts - 1:\n                        raise\n                    time.sleep(delay)\n                    delay *= backoff\n        return wrapper\n    return decorator\n",
+        "tags": ["api-integration", "resilience", "decorators"],
+    },
+    {
+        "task_id": "task-009",
+        "repo": "anote-ai/dp-lib",
+        "description": "Implement the 0/1 knapsack problem using dynamic programming. Return the maximum value.",
+        "difficulty": "hard",
+        "test_file": "tests/test_knapsack.py",
+        "reference_solution": "def knapsack(weights, values, capacity):\n    n = len(weights)\n    dp = [[0] * (capacity + 1) for _ in range(n + 1)]\n    for i in range(1, n + 1):\n        for w in range(capacity + 1):\n            dp[i][w] = dp[i-1][w]\n            if weights[i-1] <= w:\n                dp[i][w] = max(dp[i][w], dp[i-1][w - weights[i-1]] + values[i-1])\n    return dp[n][capacity]\n",
+        "tags": ["algorithms", "dynamic-programming", "optimization"],
+    },
+    {
+        "task_id": "task-010",
+        "repo": "anote-ai/stream-utils",
+        "description": "Implement a streaming median data structure supporting add(num) and get_median() in O(log n) amortised time.",
+        "difficulty": "hard",
+        "test_file": "tests/test_median.py",
+        "reference_solution": "import heapq\n\nclass MedianFinder:\n    def __init__(self):\n        self.low = []   # max-heap (negated)\n        self.high = []  # min-heap\n    def add(self, num):\n        heapq.heappush(self.low, -num)\n        heapq.heappush(self.high, -heapq.heappop(self.low))\n        if len(self.high) > len(self.low):\n            heapq.heappush(self.low, -heapq.heappop(self.high))\n    def get_median(self):\n        if len(self.low) > len(self.high):\n            return float(-self.low[0])\n        return (-self.low[0] + self.high[0]) / 2.0\n",
+        "tags": ["data-structures", "heap", "streaming"],
+    },
 ]
 
 
@@ -98,6 +147,57 @@ def make_submission(
     return submission, result
 
 
+def make_test_suite(
+    task_id: str,
+    agent_name: str = "mock-agent",
+    unit_pass_rate: float = 0.8,
+    integration_pass_rate: float = 0.7,
+    edge_case_pass_rate: float = 0.5,
+    n_unit: int = 5,
+    n_integration: int = 3,
+    n_edge: int = 2,
+    seed: int = 42,
+) -> TestSuite:
+    """Build a TestSuite with realistic pass/fail patterns."""
+    rng = random.Random(seed)
+    results: List[TestResult] = []
+
+    spec = [
+        (TestCategory.UNIT, n_unit, unit_pass_rate),
+        (TestCategory.INTEGRATION, n_integration, integration_pass_rate),
+        (TestCategory.EDGE_CASE, n_edge, edge_case_pass_rate),
+    ]
+    for category, n, rate in spec:
+        for j in range(n):
+            passed = rng.random() < rate
+            results.append(
+                TestResult(
+                    test_name=f"{category.value}_{j:02d}",
+                    category=category,
+                    passed=passed,
+                    execution_time_ms=rng.uniform(1.0, 200.0),
+                    error_message=None if passed else "AssertionError",
+                )
+            )
+    return TestSuite(task_id=task_id, agent_name=agent_name, test_results=results)
+
+
+def make_complexity_score(
+    task_id: str,
+    agent_name: str = "mock-agent",
+    seed: int = 42,
+) -> ComplexityScore:
+    """Generate a plausible ComplexityScore for a submission."""
+    rng = random.Random(seed)
+    return ComplexityScore(
+        task_id=task_id,
+        agent_name=agent_name,
+        cyclomatic_complexity=rng.randint(1, 25),
+        lines_of_code=rng.randint(10, 150),
+        n_functions=rng.randint(1, 10),
+    )
+
+
 def make_benchmark(
     n_tasks: int = 10,
     agents: Optional[List[str]] = None,
@@ -128,5 +228,22 @@ def make_benchmark(
             )
             harness.add_submission(sub)
             harness.add_result(res)
+
+            suite = make_test_suite(
+                task_id=task.task_id,
+                agent_name=agent,
+                unit_pass_rate=pr,
+                integration_pass_rate=pr * 0.9,
+                edge_case_pass_rate=pr * 0.7,
+                seed=seed + i * 100 + j + 1,
+            )
+            harness.add_test_suite(suite)
+
+            cx = make_complexity_score(
+                task_id=task.task_id,
+                agent_name=agent,
+                seed=seed + i * 100 + j + 2,
+            )
+            harness.add_complexity_score(cx)
 
     return harness

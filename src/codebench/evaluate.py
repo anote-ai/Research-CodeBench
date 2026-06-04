@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 from typing import Dict, List
 
-from .core import AgentSubmission, ExecutionResult
+from .core import AgentSubmission, ComplexityScore, ExecutionResult, TestSuite
 
 
 def pass_rate(result: ExecutionResult) -> float:
@@ -23,9 +23,43 @@ def tool_efficiency_score(submission: AgentSubmission, max_tool_calls: int = 20)
     return max(0.0, 1.0 - submission.tool_calls_used / max_tool_calls)
 
 
-def cost_adjusted_score(pass_rate: float, cost_usd: float) -> float:
+def cost_adjusted_score(pr: float, cost_usd: float) -> float:
     """Pass-rate divided by log1p(cost) — rewards cheap solutions."""
-    return pass_rate / math.log1p(cost_usd + 1e-9)
+    return pr / math.log1p(cost_usd + 1e-9)
+
+
+def functional_correctness_score(suite: TestSuite) -> float:
+    """Weighted correctness score across test categories.
+
+    Weights:
+        unit       -> 0.40
+        integration -> 0.35
+        edge_case  -> 0.25
+
+    Missing categories contribute 0 to their weighted slot.
+    The result is in [0, 1].
+    """
+    weights = {"unit": 0.40, "integration": 0.35, "edge_case": 0.25}
+    rates = suite.pass_rate_by_category()
+    score = sum(weights[cat] * rates.get(cat, 0.0) for cat in weights)
+    return float(score)
+
+
+def complexity_adjusted_score(
+    suite: TestSuite,
+    complexity: ComplexityScore,
+    alpha: float = 0.1,
+) -> float:
+    """Functional correctness score penalised by cyclomatic complexity.
+
+    score = functional_correctness_score(suite) * exp(-alpha * (cc - 1))
+
+    where cc is the cyclomatic complexity.  alpha controls penalty strength.
+    A lower-complexity solution that passes the same tests scores higher.
+    """
+    base = functional_correctness_score(suite)
+    penalty = math.exp(-alpha * max(complexity.cyclomatic_complexity - 1, 0))
+    return float(base * penalty)
 
 
 def agent_summary(

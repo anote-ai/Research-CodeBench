@@ -2,9 +2,13 @@
 
 from .core import (
     TaskDifficulty,
+    TestCategory,
     CodeTask,
     AgentSubmission,
     ExecutionResult,
+    TestResult,
+    TestSuite,
+    ComplexityScore,
     AGENT_NAMES,
     pass_at_k,
     BenchmarkHarness,
@@ -14,6 +18,8 @@ from .evaluate import (
     regression_rate,
     tool_efficiency_score,
     cost_adjusted_score,
+    functional_correctness_score,
+    complexity_adjusted_score,
     agent_summary,
     leaderboard,
 )
@@ -21,14 +27,20 @@ from .data import (
     SAMPLE_TASKS,
     make_task,
     make_submission,
+    make_test_suite,
+    make_complexity_score,
     make_benchmark,
 )
 
 __all__ = [
     "TaskDifficulty",
+    "TestCategory",
     "CodeTask",
     "AgentSubmission",
     "ExecutionResult",
+    "TestResult",
+    "TestSuite",
+    "ComplexityScore",
     "AGENT_NAMES",
     "pass_at_k",
     "BenchmarkHarness",
@@ -36,10 +48,14 @@ __all__ = [
     "regression_rate",
     "tool_efficiency_score",
     "cost_adjusted_score",
+    "functional_correctness_score",
+    "complexity_adjusted_score",
     "agent_summary",
     "leaderboard",
     "SAMPLE_TASKS",
     "make_task",
     "make_submission",
+    "make_test_suite",
+    "make_complexity_score",
     "make_benchmark",
 ]
