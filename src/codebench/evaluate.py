@@ -3,9 +3,20 @@
 from __future__ import annotations
 
 import math
+import re
 from typing import Dict, List
 
 from .core import AgentSubmission, ComplexityScore, ExecutionResult, TestSuite
+
+_INSECURE_PATTERNS: list[tuple[str, str]] = [
+    (r"eval\s*\(", "eval"),
+    (r"exec\s*\(", "exec"),
+    (r"__import__", "__import__"),
+    (r"subprocess\.(?:call|run|Popen).*shell\s*=\s*True", "shell=True"),
+    (r"os\.system\s*\(", "os.system"),
+    (r"pickle\.loads?\s*\(", "pickle.load"),
+    (r"yaml\.load\s*\([^,)]+\)", "yaml.load without Loader"),
+]
 
 
 def pass_rate(result: ExecutionResult) -> float:
@@ -28,16 +39,25 @@ def cost_adjusted_score(pr: float, cost_usd: float) -> float:
     return pr / math.log1p(cost_usd + 1e-9)
 
 
+def security_score(code: str) -> float:
+    """Heuristic security score for generated code.
+
+    Scans for well-known insecure patterns.  Each unique pattern found
+    reduces the score by 1/total_patterns.  Returns a value in [0, 1]
+    where 1.0 means no insecure patterns detected.
+    """
+    if not code:
+        return 1.0
+    findings = sum(
+        1 for pattern, _ in _INSECURE_PATTERNS if re.search(pattern, code)
+    )
+    return max(0.0, 1.0 - findings / len(_INSECURE_PATTERNS))
+
+
 def functional_correctness_score(suite: TestSuite) -> float:
     """Weighted correctness score across test categories.
 
-    Weights:
-        unit       -> 0.40
-        integration -> 0.35
-        edge_case  -> 0.25
-
-    Missing categories contribute 0 to their weighted slot.
-    The result is in [0, 1].
+    Weights: unit=0.40, integration=0.35, edge_case=0.25.
     """
     weights = {"unit": 0.40, "integration": 0.35, "edge_case": 0.25}
     rates = suite.pass_rate_by_category()
@@ -50,13 +70,7 @@ def complexity_adjusted_score(
     complexity: ComplexityScore,
     alpha: float = 0.1,
 ) -> float:
-    """Functional correctness score penalised by cyclomatic complexity.
-
-    score = functional_correctness_score(suite) * exp(-alpha * (cc - 1))
-
-    where cc is the cyclomatic complexity.  alpha controls penalty strength.
-    A lower-complexity solution that passes the same tests scores higher.
-    """
+    """Functional correctness penalised by cyclomatic complexity."""
     base = functional_correctness_score(suite)
     penalty = math.exp(-alpha * max(complexity.cyclomatic_complexity - 1, 0))
     return float(base * penalty)
