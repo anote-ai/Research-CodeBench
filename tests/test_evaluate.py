@@ -8,6 +8,7 @@ from codebench.evaluate import (
     leaderboard,
     pass_rate,
     regression_rate,
+    security_score,
     tool_efficiency_score,
 )
 
@@ -77,3 +78,32 @@ def test_leaderboard_sorted_descending():
     board = leaderboard(results, subs)
     assert board[0]["agent"] == "best"
     assert board[0]["mean_pass_rate"] >= board[1]["mean_pass_rate"]
+
+
+def test_security_score_clean_code():
+    code = "def add(a, b):\n    return a + b\n"
+    assert security_score(code) == pytest.approx(1.0)
+
+
+def test_security_score_eval_penalised():
+    code = "result = eval(user_input)"
+    score = security_score(code)
+    assert score < 1.0
+
+
+def test_security_score_os_system_penalised():
+    code = "import os\nos.system('rm -rf /')"
+    score = security_score(code)
+    assert score < 1.0
+
+
+def test_security_score_empty_code():
+    assert security_score("") == pytest.approx(1.0)
+
+
+def test_security_score_multiple_issues():
+    code = "eval(x); exec(y)"
+    score_multi = security_score(code)
+    code_single = "eval(x)"
+    score_single = security_score(code_single)
+    assert score_multi <= score_single
