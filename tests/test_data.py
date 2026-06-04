@@ -6,7 +6,7 @@ from codebench.core import BenchmarkHarness, CodeTask
 
 
 def test_sample_tasks_length():
-    assert len(SAMPLE_TASKS) == 5
+    assert len(SAMPLE_TASKS) == 10
 
 
 def test_make_task_returns_code_task():
