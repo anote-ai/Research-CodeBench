@@ -8,7 +8,7 @@ from typing import Dict, List
 from .core import AgentSubmission, ExecutionResult
 
 
-def test_pass_rate(result: ExecutionResult) -> float:
+def pass_rate(result: ExecutionResult) -> float:
     """Fraction of tests passed."""
     return result.pass_rate
 
@@ -72,14 +72,10 @@ def leaderboard(
     rows = []
     for agent, stats in summary.items():
         agent_results = res_map.get(agent, [])
-        n = len(agent_results)
-        # Treat each task result as one sample; estimate pass@k
-        # c = number of results where pass_rate == 1.0
-        c = sum(1 for r in agent_results if r.pass_rate >= 1.0)
         rows.append({
             "agent": agent,
             "mean_pass_rate": stats["mean_pass_rate"],
-            "pass@1": stats["mean_pass_rate"],  # expectation across tasks
+            "pass@1": stats["mean_pass_rate"],
             "pass@5": _estimate_pass_at_k(agent_results, k=5),
             "mean_latency_ms": stats["mean_latency_ms"],
             "mean_cost_usd": stats["mean_cost_usd"],
@@ -98,6 +94,5 @@ def _estimate_pass_at_k(results: List[ExecutionResult], k: int) -> float:
         return 0.0
     scores = []
     for r in results:
-        # Treat tests_total as n, tests_passed as c
         scores.append(pass_at_k(max(r.tests_total, k), r.tests_passed, k))
     return sum(scores) / len(scores)
