@@ -10,7 +10,7 @@ from .core import (
     BenchmarkHarness,
 )
 from .evaluate import (
-    test_pass_rate,
+    pass_rate,
     regression_rate,
     tool_efficiency_score,
     cost_adjusted_score,
@@ -32,7 +32,7 @@ __all__ = [
     "AGENT_NAMES",
     "pass_at_k",
     "BenchmarkHarness",
-    "test_pass_rate",
+    "pass_rate",
     "regression_rate",
     "tool_efficiency_score",
     "cost_adjusted_score",
