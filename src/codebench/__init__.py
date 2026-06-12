@@ -12,7 +12,7 @@ from codebench.evaluate import (
     cost_adjusted_score,
     leaderboard,
     regression_rate,
-    test_pass_rate,
+    pass_rate,
     tool_efficiency_score,
 )
 
@@ -26,6 +26,6 @@ __all__ = [
     "cost_adjusted_score",
     "leaderboard",
     "regression_rate",
-    "test_pass_rate",
+    "pass_rate",
     "tool_efficiency_score",
 ]
