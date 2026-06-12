@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import math
+from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional
+from typing import Dict
 
 from pydantic import BaseModel, Field
 
@@ -40,6 +41,35 @@ class ExecutionResult(BaseModel):
     tests_total: int = Field(ge=0)
     regression_count: int = Field(ge=0)
     execution_success: bool
+
+    @property
+    def pass_rate(self) -> float:
+        """Fraction of tests passed."""
+        return self.tests_passed / max(self.tests_total, 1)
+
+
+@dataclass
+class ComplexityScore:
+    """Cyclomatic and cognitive complexity scores for a code submission."""
+
+    task_id: str
+    cyclomatic_complexity: float = 1.0
+    cognitive_complexity: float = 1.0
+
+
+@dataclass
+class TestSuite:
+    """Aggregated test results broken down by category."""
+
+    task_id: str
+    results_by_category: Dict[str, ExecutionResult] = field(default_factory=dict)
+
+    def pass_rate_by_category(self) -> Dict[str, float]:
+        """Return pass rate per category."""
+        return {
+            cat: result.pass_rate
+            for cat, result in self.results_by_category.items()
+        }
 
 
 AGENT_NAMES: list[str] = [
