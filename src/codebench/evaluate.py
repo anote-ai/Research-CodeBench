@@ -58,11 +58,16 @@ def functional_correctness_score(suite: TestSuite) -> float:
     """Weighted correctness score across test categories.
 
     Weights: unit=0.40, integration=0.35, edge_case=0.25.
+    Weights are renormalized to only the categories present in the suite,
+    so a suite missing a category still scores on a 0-1 scale.
     """
     weights = {"unit": 0.40, "integration": 0.35, "edge_case": 0.25}
     rates = suite.pass_rate_by_category()
-    score = sum(weights[cat] * rates.get(cat, 0.0) for cat in weights)
-    return float(score)
+    present = {cat: w for cat, w in weights.items() if cat in rates}
+    if not present:
+        return 0.0
+    total_weight = sum(present.values())
+    return float(sum(present[cat] * rates[cat] for cat in present) / total_weight)
 
 
 def complexity_adjusted_score(
