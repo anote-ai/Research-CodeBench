@@ -3,6 +3,7 @@
 import pytest
 from codebench.core import AgentSubmission, ExecutionResult
 from codebench.evaluate import (
+    _estimate_pass_at_k,
     agent_summary,
     cost_adjusted_score,
     leaderboard,
@@ -107,3 +108,25 @@ def test_security_score_multiple_issues():
     code_single = "eval(x)"
     score_single = security_score(code_single)
     assert score_multi <= score_single
+
+
+def test_estimate_pass_at_k_conflates_unit_tests_with_rollouts():
+    # These two records have the same unit-test pass rate, but the current
+    # estimator gives different pass@3 values solely because it treats
+    # unit-test counts as sampling counts. True rollout-based pass@k would
+    # require independent rollout counts, which these single-run records do
+    # not contain.
+    case_a = _result(passed=6, total=10)  # 6/10 = 0.6
+    case_b = _result(passed=3, total=5)   # 3/5  = 0.6
+
+    assert case_a.pass_rate == pytest.approx(case_b.pass_rate)
+
+    # Current (incorrect) behavior: treats unit-test counts as sample counts.
+    # pass_at_k(10, 6, 3) = 1 - C(4,3)/C(10,3) = 1 - 4/120 ≈ 0.9667
+    # pass_at_k(5,  3, 3) = 1.0  (n-c=2 < k=3, early exit)
+    pa = _estimate_pass_at_k([case_a], k=3)
+    pb = _estimate_pass_at_k([case_b], k=3)
+
+    assert pa == pytest.approx(0.9666667, abs=1e-6)
+    assert pb == pytest.approx(1.0)
+    assert pa < pb  # documents the category error
