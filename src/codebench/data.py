@@ -198,6 +198,58 @@ def make_complexity_score(
     )
 
 
+def make_rollout_benchmark(
+    n_tasks: int = 10,
+    agents: Optional[List[str]] = None,
+    n_rollouts: int = 5,
+    seed: int = 42,
+) -> BenchmarkHarness:
+    """Build a BenchmarkHarness with n_rollouts independent submissions per (task, agent).
+
+    Each agent is assigned a 'true' skill level drawn once per task; individual
+    rollout pass rates are then sampled around that skill level to simulate
+    run-to-run variance. This gives reliability@k its required n>1 rollout counts.
+    """
+    if agents is None:
+        agents = ["anote-code", "claude-code", "codex"]
+
+    rng = random.Random(seed)
+    harness = BenchmarkHarness()
+
+    difficulties = list(TaskDifficulty)
+    for i in range(n_tasks):
+        base = SAMPLE_TASKS[i % len(SAMPLE_TASKS)].copy()
+        base["task_id"] = f"task-{i:03d}"
+        base["difficulty"] = rng.choice(difficulties).value
+        task = CodeTask(**base)
+        harness.add_task(task)
+
+        for j, agent in enumerate(agents):
+            # True skill: stable per (task, agent) pair
+            true_skill = rng.uniform(0.3, 1.0)
+            # Variance: higher-skill agents are slightly more consistent
+            variance = rng.uniform(0.05, 0.25) * (1.0 - true_skill * 0.5)
+
+            for r in range(n_rollouts):
+                rollout_seed = seed + i * 1000 + j * 100 + r
+                rollout_rng = random.Random(rollout_seed)
+                # Per-rollout pass rate sampled around true skill
+                pr = max(0.0, min(1.0, true_skill + rollout_rng.gauss(0, variance)))
+                sub, res = make_submission(
+                    task_id=task.task_id,
+                    agent_name=agent,
+                    pass_rate=pr,
+                    seed=rollout_seed,
+                )
+                # Override execution_success: a rollout is fully successful only
+                # when all tests pass — a meaningful threshold for reliability@k.
+                res = res.model_copy(update={"execution_success": pr >= 0.95})
+                harness.add_submission(sub)
+                harness.add_result(res)
+
+    return harness
+
+
 def make_benchmark(
     n_tasks: int = 10,
     agents: Optional[List[str]] = None,
