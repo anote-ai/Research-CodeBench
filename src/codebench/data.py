@@ -247,3 +247,39 @@ def make_benchmark(
             harness.add_complexity_score(cx)
 
     return harness
+
+
+def make_rollout_benchmark(
+    n_tasks: int = 10,
+    agents: Optional[List[str]] = None,
+    n_rollouts: int = 5,
+    seed: int = 42,
+) -> BenchmarkHarness:
+    """Build a BenchmarkHarness with n_rollouts independent ExecutionResult records per (task, agent) pair."""
+    if n_rollouts < 1:
+        raise ValueError(f"n_rollouts must be >= 1, got {n_rollouts}")
+
+    if agents is None:
+        agents = ["anote-code", "claude-code", "codex"]
+
+    rng = random.Random(seed)
+    harness = BenchmarkHarness()
+
+    for i in range(n_tasks):
+        task = make_task(i)
+        harness.add_task(task)
+        for agent_name in agents:
+            p = rng.uniform(0.3, 0.95)
+            tests_total = 10
+            for _ in range(n_rollouts):
+                tests_passed = sum(1 for _ in range(tests_total) if rng.random() < p)
+                harness.add_result(ExecutionResult(
+                    task_id=task.task_id,
+                    agent_name=agent_name,
+                    tests_passed=tests_passed,
+                    tests_total=tests_total,
+                    regression_count=0,
+                    execution_success=tests_passed == tests_total,
+                ))
+
+    return harness
