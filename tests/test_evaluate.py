@@ -8,7 +8,9 @@ from codebench.evaluate import (
     leaderboard,
     pass_rate,
     regression_rate,
+    reliability_at_k,
     security_score,
+    single_rollout_proxy,
     tool_efficiency_score,
 )
 
@@ -107,3 +109,96 @@ def test_security_score_multiple_issues():
     code_single = "eval(x)"
     score_single = security_score(code_single)
     assert score_multi <= score_single
+
+
+# --- H1: category-error proof ---
+
+def test_h1_current_passk_sensitive_to_tests_total():
+    """Regression test proving the category error in _estimate_pass_at_k.
+
+    Two agents have identical true reliability (60% per-attempt success rate)
+    but different tests_total. The current formula should yield different pass@5
+    values — demonstrating it measures test granularity, not agent reliability.
+    """
+    from codebench.evaluate import _estimate_pass_at_k
+
+    # Agent A: 4 of 10 unit tests pass — 40% pass rate, tests_total=10
+    result_a = _result(passed=4, total=10, agent="agent-a")
+    # Agent B: same 40% rate but only 2 of 5 unit tests, tests_total=5
+    result_b = _result(passed=2, total=5, agent="agent-b")
+
+    pass_at_5_a = _estimate_pass_at_k([result_a], k=5)
+    pass_at_5_b = _estimate_pass_at_k([result_b], k=5)
+
+    # Values differ despite identical true reliability — the category error
+    assert pass_at_5_a != pytest.approx(pass_at_5_b), (
+        "Current pass@k should differ for same reliability but different tests_total "
+        "(category error). If this fails, the bug has been fixed — remove this test."
+    )
+
+
+# --- reliability@k tests ---
+
+def _rollout(passed: int, total: int, success: bool, agent: str = "a", task: str = "t1") -> ExecutionResult:
+    return ExecutionResult(
+        task_id=task,
+        agent_name=agent,
+        tests_passed=passed,
+        tests_total=total,
+        regression_count=0,
+        execution_success=success,
+    )
+
+
+def test_reliability_at_k_perfect_agent():
+    """Agent that always fully passes should have reliability@k = 1.0."""
+    results = [_rollout(10, 10, True, agent="a", task="t1") for _ in range(10)]
+    assert reliability_at_k(results, k=5) == pytest.approx(1.0)
+
+
+def test_reliability_at_k_zero_agent():
+    """Agent that never fully passes should have reliability@k = 0.0."""
+    results = [_rollout(5, 10, False, agent="a", task="t1") for _ in range(10)]
+    assert reliability_at_k(results, k=5) == pytest.approx(0.0)
+
+
+def test_reliability_at_k_differs_from_current_passk():
+    """reliability@k uses rollout-level success, not per-test counts — values must differ."""
+    from codebench.evaluate import _estimate_pass_at_k
+
+    # 10 rollouts: 4 fully succeed, 6 partially pass
+    results = (
+        [_rollout(10, 10, True,  agent="a", task="t1")] * 4
+        + [_rollout(3, 10, False, agent="a", task="t1")] * 6
+    )
+    new = reliability_at_k(results, k=5)
+    old = _estimate_pass_at_k(results, k=5)
+    assert new != pytest.approx(old), (
+        "reliability@k and current pass@k should differ because they use "
+        "different quantities as n and c."
+    )
+
+
+def test_reliability_at_k_groups_by_task_and_agent():
+    """Results from different tasks/agents should be grouped independently."""
+    r_t1 = [_rollout(10, 10, True, agent="a", task="t1")] * 5
+    r_t2 = [_rollout(0, 10, False, agent="a", task="t2")] * 5
+    score = reliability_at_k(r_t1 + r_t2, k=5)
+    # t1 perfect (1.0), t2 zero (0.0) → average ≈ 0.5
+    assert 0.4 < score < 0.6
+
+
+# --- single_rollout_proxy tests ---
+
+def test_single_rollout_proxy_range():
+    r = _result(passed=8, total=10, reg=1, agent="a")
+    s = _sub(agent="a", tool_calls=10)
+    score = single_rollout_proxy(r, s)
+    assert 0.0 <= score <= 1.0
+
+
+def test_single_rollout_proxy_penalises_regressions():
+    r_clean = _result(passed=8, total=10, reg=0, agent="a")
+    r_regressed = _result(passed=8, total=10, reg=3, agent="a")
+    s = _sub(agent="a", tool_calls=5)
+    assert single_rollout_proxy(r_clean, s) > single_rollout_proxy(r_regressed, s)

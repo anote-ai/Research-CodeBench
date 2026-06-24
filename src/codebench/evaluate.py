@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 import re
-from typing import Dict, List
+from typing import Dict, List, Tuple
 
 from .core import AgentSubmission, ComplexityScore, ExecutionResult, TestSuite
 
@@ -149,3 +149,48 @@ def _estimate_pass_at_k(results: List[ExecutionResult], k: int) -> float:
     for r in results:
         scores.append(pass_at_k(max(r.tests_total, k), r.tests_passed, k))
     return sum(scores) / len(scores)
+
+
+def reliability_at_k(results: List[ExecutionResult], k: int = 5) -> float:
+    """Correctly parameterised reliability@k from multi-rollout data.
+
+    Groups ExecutionResults by (task_id, agent_name), treats each group as n
+    independent rollouts, counts c = fully-passing rollouts (execution_success),
+    and applies the unbiased pass@k estimator with correct n and c.
+
+    This fixes the category error in _estimate_pass_at_k, which uses tests_total
+    and tests_passed (within-submission test counts) instead of rollout counts.
+    """
+    from .core import pass_at_k
+
+    grouped: Dict[Tuple[str, str], List[ExecutionResult]] = {}
+    for r in results:
+        grouped.setdefault((r.task_id, r.agent_name), []).append(r)
+
+    scores = []
+    for rollouts in grouped.values():
+        n = len(rollouts)
+        c = sum(1 for r in rollouts if r.execution_success)
+        if n >= k:
+            scores.append(pass_at_k(n, c, k))
+        else:
+            # Fewer rollouts than k: use all available
+            scores.append(pass_at_k(n, c, min(k, n)))
+    return sum(scores) / len(scores) if scores else 0.0
+
+
+def single_rollout_proxy(
+    result: ExecutionResult,
+    submission: AgentSubmission,
+    suite: "TestSuite | None" = None,
+) -> float:
+    """Cheap single-rollout proxy for reliability.
+
+    Combines pass_rate, regression penalty, and tool-efficiency into a
+    single score in [0, 1]. Used in H3 to test whether one run can
+    approximate reliability@k without repeated rollouts.
+    """
+    pr = result.pass_rate
+    reg_penalty = regression_rate(result)
+    tool_eff = tool_efficiency_score(submission)
+    return pr * (1.0 - reg_penalty) * tool_eff
