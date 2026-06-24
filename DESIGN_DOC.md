@@ -1,8 +1,8 @@
-# Research Design Document: CodeBench — Measuring Reliability of Agentic Code Generation
+# Research Design Document: CodeBench — Measuring Reliability and Security of Agentic Code Generation
 
 ## Vision Statement
 
-Create **CodeBench**: an evaluation framework that measures AI coding agents on *verified correctness, reliability across repeated attempts, security safety, and specification fidelity* — moving beyond the misapplied pass@k metric to capture the dimensions that matter in production software engineering. The central contribution is identifying and correcting a fundamental measurement error in how the field evaluates multi-attempt code generation, then providing a practical single-rollout proxy that avoids the cost of repeated evaluation.
+Create **CodeBench**: an evaluation framework that exposes two independent failures in how the field evaluates AI coding agents — a **measurement error** in the pass@k formula, and a **security blindspot** where functionally correct code introduces production vulnerabilities. Fixing either failure alone changes the leaderboard; fixing both together reveals that the agents ranked highest today may be simultaneously the least reliable and the least secure when deployed.
 
 ---
 
@@ -31,13 +31,25 @@ is valid only when *n* is the number of **independent, identically distributed f
 
 Agent-B appears better by current scoring despite being statistically identical. The test-suite size determines the score, not the agent's reliability.
 
+### The Security Blindspot
+
+Even when the pass@k formula is applied correctly, it measures only functional correctness — whether tests pass. It says nothing about whether generated code is safe to deploy. Veracode (2025) reports that AI-generated code introduces **2.74× more vulnerabilities** than human-written code, and approximately 45% of AI-generated samples fail OWASP Top 10 security tests even when they pass all functional tests. The most frequent critical CWEs in AI-generated Python code are:
+
+- **CWE-89**: SQL Injection — unsanitized inputs in database queries
+- **CWE-78**: OS Command Injection — unsanitized inputs passed to `os.system` or `subprocess`
+- **CWE-502**: Deserialization of Untrusted Data — `pickle.loads` on unvalidated input
+- **CWE-259/798**: Hard-coded credentials — API keys or passwords embedded in generated code
+
+A benchmark that reports only functional pass@k gives enterprises no signal about the security debt they are incurring by deploying AI-generated code.
+
 ### What This Is (and Is Not)
 
-This research does **not** propose a new formula. The Chen et al. (2021) estimator is correct — it is simply being applied to the wrong inputs. Our contribution is:
+This research does **not** propose new formulas. The Chen et al. (2021) estimator is correct; the `security_score` heuristic is a proxy for production security scanning (Semgrep, Bandit, CodeQL). Our contributions are:
 
-1. **Diagnosing the operationalization error** and documenting its magnitude on a benchmark harness.
-2. **Proposing `reliability@k`**: the same formula applied correctly, with *n* = number of independent rollouts per (task, agent) and *c* = number of rollouts achieving execution success (all tests passing).
-3. **Proposing a single-rollout proxy** for settings where repeated rollouts are cost-prohibitive.
+1. **Diagnosing the operationalization error** in pass@k and documenting its magnitude.
+2. **Proposing `reliability@k`**: the same Chen et al. formula applied correctly, with *n* = independent rollouts and *c* = fully-passing rollouts.
+3. **Proposing security-adjusted reliability**: a compound metric that counts only rollouts that are *both* functionally correct *and* free of high-severity security patterns.
+4. **Proposing a single-rollout proxy** for cost-constrained settings.
 
 ### Novel Contributions
 
@@ -46,8 +58,9 @@ This research does **not** propose a new formula. The Chen et al. (2021) estimat
 | **Category error proof** | Formal proof + counter-example that current pass@k misuses the Chen et al. estimator |
 | **reliability@k** | Correct operationalization: pass@k with per-(task, agent) rollout counts as inputs |
 | **Magnitude of inflation (H2)** | Empirical measurement of how much current scores inflate true reliability |
+| **Security-adjusted reliability (H4)** | reliability@k conditioned on `security_score ≥ 0.80`; decorrelated from functional reliability |
 | **Single-rollout proxy** | `pass_rate × (1 − regression_rate) × tool_efficiency_score`, validated against reliability@k |
-| **Leaderboard flip analysis** | Demonstration that agent rankings can invert when using the correct metric |
+| **Dual leaderboard flip analysis** | Agent rankings can invert *twice*: once from functional→reliability, again from reliability→security-adjusted |
 
 ---
 
@@ -65,7 +78,13 @@ This research does **not** propose a new formula. The Chen et al. (2021) estimat
 
 **BigCodeBench (Zhuo et al., 2024)**: Evaluates functional correctness with diverse tool use. Does not address the rollout-count issue.
 
-The gap this work fills: **no existing benchmark correctly operationalizes multi-attempt reliability for agentic code generation using the Chen et al. estimator**.
+**CyberSecEval (Bhatt et al., 2023)**: Meta's security evaluation of LLMs; measures insecure code generation rates on targeted prompts. Covers CWE categories but does not integrate security scoring with functional pass@k — the two evaluations are run separately, masking their interaction.
+
+**SecurityEval (Siddiq & Santos, 2022)**: 121 Python/C tasks with known CWEs; evaluates whether models generate vulnerable code when solving security-adjacent tasks. Does not generalize to arbitrary coding tasks and does not report multi-rollout reliability.
+
+**Veracode GenAI Code Security Report (2025)**: Industry report documenting 2.74× vulnerability rate increase in AI-generated vs. human-written code; motivates the scale of the security problem but does not propose a benchmark solution.
+
+The gap this work fills: **no existing benchmark jointly measures multi-attempt reliability and security safety for the same agent submissions, nor shows whether the two dimensions are correlated or independent**.
 
 ---
 
@@ -88,6 +107,13 @@ The gap this work fills: **no existing benchmark correctly operationalizes multi
 
 **Fallback strategy**: If ρ < 0.70, the recommended approach is to collect n ≥ 5 rollouts per (task, agent) pair and apply reliability@k directly. If budget allows only a single rollout, report pass_rate without pass@k framing to avoid implying multi-attempt guarantees.
 
+### H4: Security-Adjusted Reliability Produces a Different Agent Ranking than Functional Reliability
+**Claim**: `security_adjusted_reliability@k` — reliability@k counting only rollouts that are both functionally correct *and* have `security_score ≥ 0.80` — produces a Kendall τ < 0.6 against functional `reliability@k` across agents, demonstrating that the two dimensions are independent signals.
+
+**Motivation**: If functional and security rankings were perfectly correlated (τ ≈ 1.0), security evaluation would add no new information — the best functional agent is always the safest. Issue #10 conjectures they diverge; H4 provides the falsifiable test. Either result is publishable: divergence (τ < 0.6) proves security is an independent evaluation axis; convergence (τ ≥ 0.6) establishes a positive finding that capable agents are also safer.
+
+**Security threshold rationale**: `security_score ≥ 0.80` means at most 1 of 7 heuristic patterns triggered. This is a lenient threshold appropriate for a proxy scanner; production deployment should use Semgrep/Bandit with a 0-finding bar.
+
 ---
 
 ## Simulation Validity
@@ -96,12 +122,13 @@ Because calling commercial code agents at scale for multi-rollout evaluation is 
 
 **Simulation design**: Each (task, agent) pair is assigned a latent `true_skill` drawn from Uniform(0.30, 0.95). Per-rollout test pass rate is drawn from a truncated Gaussian centered at `true_skill`. A rollout is marked `execution_success = True` if and only if all tests pass (`tests_passed == tests_total`), mirroring the definition used by SWE-bench and other agentic benchmarks.
 
-**What the simulation validates**: The simulation makes H1 and H2 purely mathematical — they depend on the structure of the estimator, not on real agent behavior. The simulation confirms what the math already proves. H3 is the only empirical question and the one most sensitive to simulation assumptions.
+**What the simulation validates**: H1 and H2 are purely mathematical — they depend on the estimator structure, not real agent behavior. H3 and H4 are empirical questions sensitive to simulation assumptions. For H4, `security_score` is computed on the `generated_code` field of `AgentSubmission`; the simulation generates minimal stub code (`"# generated\ndef solution(): pass\n"`), so security scores will be uniformly 1.0 unless real generated code is substituted. **H4 therefore requires real agent code as input** — it cannot be validated on synthetic data alone.
 
 **Limitations**:
 1. Real agents exhibit non-Gaussian error distributions (systematic failure modes, hallucination patterns).
 2. True skill varies across task types (algorithms vs. web vs. data processing).
 3. Tool efficiency and regression rates in real agents may be correlated in ways the simulation does not capture.
+4. Synthetic generated code has no security vulnerabilities — H4 must be re-run with actual agent outputs to produce meaningful security scores.
 
 **Simulation is sufficient for**: Demonstrating the magnitude of H1 and H2 effects. Establishing a lower bound on inflation. Motivating the need for real multi-rollout data collection.
 
@@ -192,6 +219,32 @@ Apply both metrics to rank the 3 agents. Check whether the ordinal ranking of ag
 
 ---
 
+### Experiment 4: H4 — Security-Adjusted Reliability
+**Prerequisite**: This experiment requires real agent-generated code, not synthetic stubs. It is scoped as Phase 2 work (post-simulation), using code collected from actual Claude Code, Codex, and anote-code runs on SAMPLE_TASKS.
+
+**Protocol**:
+1. For each (task, agent, rollout), run `security_score(submission.generated_code)`.
+2. Define a rollout as *secure-and-correct* if `execution_success == True` AND `security_score ≥ 0.80`.
+3. Compute `security_adjusted_reliability@5` using the Chen et al. formula with *c* = secure-and-correct rollout count.
+4. Compute Kendall τ between agent ranking by `reliability@5` and by `security_adjusted_reliability@5`.
+5. Test: τ < 0.6?
+
+**Expected result**: τ < 0.6, indicating security and functional reliability are independent agent properties. The agent with highest reliability@5 is not necessarily the one with highest security-adjusted reliability.
+
+**Dual leaderboard flip table**:
+
+| Agent | reliability@5 | security_score (mean) | security_adj_reliability@5 | Functional rank | Security-adj rank |
+|---|---|---|---|---|---|
+| anote-code | ~0.18 | ~0.85 | ~0.15 | ? | ? |
+| claude-code | ~0.12 | ~0.90 | ~0.11 | ? | ? |
+| codex | ~0.09 | ~0.78 | ~0.07 | ? | ? |
+
+**Why this matters**: A practitioner choosing the "best" agent by reliability@5 may be deploying the agent with the worst security profile. The compound metric `security_adjusted_reliability@k` is the correct target for production deployment decisions.
+
+**Heuristic scanner note**: `security_score` in `evaluate.py` uses 7 regex patterns (eval, exec, __import__, subprocess shell=True, os.system, pickle.load, yaml.load without Loader). This is a lightweight proxy. Production use should replace it with Semgrep (100+ rules) or Bandit. False positive/negative rates against a labeled ground truth should be reported before publishing H4 results.
+
+---
+
 ## Expected Results Summary
 
 | Experiment | Metric | Expected Finding |
@@ -201,8 +254,9 @@ Apply both metrics to rank the 3 agents. Check whether the ordinal ranking of ag
 | E2 (H2 magnitude) | Inflation gap | ~0.80 mean inflation; reliability@5 ≈ 0.05–0.25 |
 | E2 (Leaderboard flip) | Rank correlation | ≥1 rank swap observed between current and reliability ranking |
 | E3 (H3 proxy) | Spearman ρ | ρ < 0.70; proxy insufficient; repeated evaluation required |
+| E4 (H4 security) | Kendall τ | τ < 0.6; security and functional reliability are independent; second rank flip observed |
 
-**Primary claim**: Current benchmarks applying pass@k to within-submission test counts overstate agent reliability by 0.60–0.90 in absolute score terms and can invert agent rankings; the correct operationalization (reliability@k) requires independent rollout data that single-run benchmarks do not collect.
+**Primary claim**: Current benchmarks fail on two independent axes — (1) pass@k is mathematically misapplied, overstating reliability by 0.60–0.90; (2) functional correctness does not imply security safety, and conditioning on security changes the leaderboard a second time. An agent selected for reliability may simultaneously be the highest-vulnerability generator in the cohort.
 
 ---
 
@@ -241,6 +295,45 @@ def single_rollout_proxy(result: ExecutionResult, submission: AgentSubmission) -
     return pr * (1.0 - reg) * eff
 ```
 
+### `security_score` (existing in evaluate.py)
+```python
+def security_score(code: str) -> float:
+    """Heuristic security score in [0, 1]. 1.0 = no insecure patterns detected.
+
+    Scans for 7 pattern classes: eval, exec, __import__, subprocess shell=True,
+    os.system, pickle.load, yaml.load without Loader.
+    Each unique pattern reduces score by 1/7 (~0.143).
+    """
+```
+
+### `security_adjusted_reliability@k` (proposed for Phase 2)
+```python
+def security_adjusted_reliability_at_k(
+    results: List[ExecutionResult],
+    submissions: List[AgentSubmission],
+    k: int = 5,
+    security_threshold: float = 0.80,
+) -> float:
+    """reliability@k counting only rollouts that are secure-and-correct.
+
+    A rollout is secure-and-correct if:
+      - execution_success is True (all tests pass), AND
+      - security_score(generated_code) >= security_threshold
+    """
+    sub_map = {(s.task_id, s.agent_name): s for s in submissions}
+    grouped = {}
+    for r in results:
+        grouped.setdefault((r.task_id, r.agent_name), []).append(r)
+    scores = []
+    for (task_id, agent_name), rollouts in grouped.items():
+        sub = sub_map.get((task_id, agent_name))
+        sec = security_score(sub.generated_code) if sub else 1.0
+        n = len(rollouts)
+        c = sum(1 for r in rollouts if r.execution_success and sec >= security_threshold)
+        scores.append(pass_at_k(n, c, min(k, n)))
+    return sum(scores) / len(scores) if scores else 0.0
+```
+
 ### `_estimate_pass_at_k` (current — documented as incorrect)
 ```python
 # n = tests_total (NOT independent rollouts) — violates i.i.d. assumption
@@ -258,7 +351,9 @@ scores.append(pass_at_k(max(r.tests_total, k), r.tests_passed, k))
 
 **For the field**: Wang et al. (2023) showed that self-consistency over multiple reasoning paths improves LLM accuracy; the same logic applies to code generation. The field should move toward multi-rollout evaluation as the standard protocol, not a special case.
 
-**For enterprise deployment**: A coding agent with 95% pass rate in a single run but 30% reliability@5 will fail 70% of the time when deployed to handle 5 similar tasks. Current benchmarks cannot distinguish this from a genuinely reliable agent.
+**For enterprise deployment**: A coding agent with 95% pass rate in a single run but 30% reliability@5 will fail 70% of the time when deployed to handle 5 similar tasks. And of the 30% of runs that do succeed, some fraction will introduce CWE-89/78/502 vulnerabilities that pass all functional tests. Current benchmarks cannot detect either failure mode. `security_adjusted_reliability@k` is the metric an enterprise security team should demand before deployment.
+
+**For Anote's product roadmap**: The security_score heuristic is already implemented in `evaluate.py`. Integrating it into the anote-code evaluation pipeline is a near-term product action — flag submissions with `security_score < 0.80` before they are returned to users.
 
 ---
 
@@ -268,19 +363,22 @@ scores.append(pass_at_k(max(r.tests_total, k), r.tests_passed, k))
 research-codebench/
 ├── src/codebench/
 │   ├── core.py              # ExecutionResult, AgentSubmission, BenchmarkHarness
-│   ├── evaluate.py          # pass_rate, reliability_at_k, single_rollout_proxy
+│   ├── evaluate.py          # pass_rate, reliability_at_k, single_rollout_proxy,
+│   │                        # security_score, security_adjusted_reliability_at_k
 │   └── data.py              # make_rollout_benchmark, SAMPLE_TASKS
 ├── tests/
-│   ├── test_evaluate.py     # H1 proof, reliability@k, proxy tests
+│   ├── test_evaluate.py     # H1 proof, reliability@k, proxy tests, security tests
 │   └── test_data.py         # make_rollout_benchmark semantics
 ├── scripts/
-│   ├── run_experiments.py   # Experiments 0–3
-│   └── plot_results.py      # Paper figures (fig1–fig4)
+│   ├── run_experiments.py   # Experiments 0–3 (simulation phase)
+│   ├── run_security_exp.py  # Experiment 4 (requires real agent code — Phase 2)
+│   └── plot_results.py      # Paper figures (fig1–fig5)
 └── figures/
     ├── fig1_baseline.png
     ├── fig2_h1_proof.png
     ├── fig3_h2_comparison.png
-    └── fig4_h3_correlation.png
+    ├── fig4_h3_correlation.png
+    └── fig5_h4_security_leaderboard.png  # Phase 2
 ```
 
 ---
@@ -289,14 +387,14 @@ research-codebench/
 
 | Phase | Duration | Deliverable |
 |---|---|---|
-| Core metric implementation | Done | `reliability_at_k`, `single_rollout_proxy` in evaluate.py |
+| Core metric implementation | Done | `reliability_at_k`, `single_rollout_proxy`, `security_score` in evaluate.py |
 | Simulation harness | Done | `make_rollout_benchmark` in data.py |
-| H1–H3 experiments | Done | `scripts/run_experiments.py` |
-| Paper figures | Done | `scripts/plot_results.py`, `figures/` |
-| Real agent data collection | 4 weeks | Actual Claude Code / Codex rollouts on SAMPLE_TASKS |
-| Paper writing | 4 weeks | AAMAS 2027 or ICSE 2027 submission |
+| H1–H3 experiments (simulation) | Done | `scripts/run_experiments.py`, `figures/fig1–fig4` |
+| H4 real agent code collection | 3 weeks | Claude Code + Codex rollouts on SAMPLE_TASKS with real generated code |
+| H4 security experiment | 1 week | `scripts/run_security_exp.py`, `figures/fig5` |
+| Paper writing | 4 weeks | ICSE 2027 submission (~Aug 2026 deadline) |
 
-**Target venue**: AAMAS 2027, ICSE 2027, or NeurIPS 2026 Datasets & Benchmarks track
+**Target venue**: ICSE 2027 (primary — ~Aug 2026 deadline); ICLR 2027 (backup — ~Oct 2026)
 
 ---
 
@@ -305,17 +403,23 @@ research-codebench/
 | Risk | Likelihood | Mitigation |
 |---|---|---|
 | H3 ρ higher than expected (proxy works) | Medium | Report honestly; contributes positive result to field |
+| H4 τ ≥ 0.6 (security and reliability correlated) | Medium | Report honestly; shows capable agents are also safer — also publishable |
 | Simulation does not reflect real agent distributions | High | Frame as simulation study (see Simulation Validity section); collect real data in Phase 2 |
 | Chen et al. already noted this limitation | Low | Check paper carefully; if so, this becomes an empirical magnitude study |
 | n=8 rollouts insufficient for stable reliability@k | Medium | Sensitivity analysis with n=5,8,12,20 |
-| Cost of real multi-rollout evaluation | High | Focus on 10 tasks × 3 agents × 8 rollouts = 240 API calls (~$5–15 with current pricing) |
+| Cost of real multi-rollout evaluation | High | 10 tasks × 3 agents × 8 rollouts = 240 API calls (~$5–15 with current pricing) |
+| security_score heuristic has high false positive rate | Medium | Validate against 50 manually-labeled code samples before publishing H4; replace with Bandit if accuracy < 80% |
+| CyberSecEval already covers this angle | Low | Our novelty is the *joint* metric (functional × security × reliability), not security evaluation in isolation |
 
 ---
 
 ## Related Issues
 
-- Reproducibility: all experiments seeded (seed=42), deterministic
-- Statistical rigor: report Spearman ρ with 95% CI and p-value; Bonferroni-correct multiple comparisons
-- Contamination: SAMPLE_TASKS are synthetic; no training data overlap concern
-- Extended evaluation: integration with real repos (SWE-bench-style) as future work
-- Related work audit: Chen et al. 2021, SWE-bench, EvalPlus, LiveCodeBench, Wang et al. 2023
+- Reproducibility: all H1–H3 experiments seeded (seed=42), deterministic; H4 requires real API calls (log all outputs)
+- Statistical rigor: Spearman ρ with 95% CI; Kendall τ with p-value; Bonferroni correction across H1–H4
+- Security scanner validation: validate `security_score` against manually-labeled ground truth before publishing H4
+- Contamination: SAMPLE_TASKS are synthetic; no training data overlap concern for H1–H3
+- Extended evaluation: integration with real repos (SWE-bench-style) and Semgrep/Bandit integration as future work
+- Related work audit: Chen et al. 2021, SWE-bench, EvalPlus, LiveCodeBench, Wang et al. 2023, CyberSecEval, Veracode 2025
+- Issue #5 (security-adjusted pass@k): addressed by H4 and `security_adjusted_reliability_at_k`
+- Issue #10 (security vs. functional ranking divergence): addressed by H4 Kendall τ test
