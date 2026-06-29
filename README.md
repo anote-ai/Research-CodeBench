@@ -1,81 +1,91 @@
-# AnoteCodeBench
+# CodeBench
 
-> Benchmarking Enterprise Code-Generation Agents vs. Claude Code & Codex
+> **Benchmarking AI coding agents on real-world repository tasks.**
 
-AnoteCodeBench is a SWE-bench / terminal-bench-style evaluation framework that measures code-generation agents on **repo-level programming tasks** with an emphasis on enterprise private-repository scenarios.
+CodeBench evaluates coding agents on realistic, repo-level Python tasks,
+measuring test pass rates, regression rates, tool efficiency, and cost.
 
----
+## Project documents
 
-## Benchmark Design
-
-### Task Categories
-
-| Category | Description |
-|----------|-------------|
-| Bug Fix | Identify and fix a regression introduced in a commit |
-| Feature Implementation | Implement a new function/class from a docstring spec |
-| Refactoring | Restructure existing code without changing behaviour |
-| Test Writing | Write a test suite for a provided module |
-| Documentation | Generate accurate docstrings and README sections |
-
-### Difficulty Levels
-
-| Level | Criteria |
-|-------|----------|
-| EASY | Single-file changes, clear specification |
-| MEDIUM | Multi-file changes, moderate ambiguity |
-| HARD | Cross-repo dependencies, underspecified requirements |
-
----
-
-## Agent Comparison
-
-| Agent | pass@1 | pass@5 | Regression Rate | Avg Cost (USD) |
-|-------|--------|--------|-----------------|----------------|
-| anote-code | 0.61 | 0.84 | 0.04 | 0.08 |
-| claude-code | 0.59 | 0.81 | 0.03 | 0.12 |
-| codex | 0.53 | 0.76 | 0.06 | 0.07 |
-| gemini-code | 0.50 | 0.72 | 0.07 | 0.09 |
-| copilot | 0.47 | 0.69 | 0.08 | 0.05 |
-
-*Results are illustrative placeholders; run the benchmark to obtain real numbers.*
-
----
-
-## Evaluation Metrics
-
-- **pass@k** — Unbiased estimator `1 - C(n-c,k)/C(n,k)` (Chen et al., 2021)
-- **test_pass_rate** — Fraction of unit tests that pass for a given submission
-- **regression_rate** — Fraction of previously-passing tests broken by the submission
-- **tool_efficiency_score** — Penalises excessive tool calls (normalised to [0,1])
-- **cost_adjusted_score** — `pass_rate / log1p(cost_usd)` for cost-aware ranking
-
----
+- [DESIGN_DOC.md](./DESIGN_DOC.md) — full research design: novelty claims,
+  experiments, metrics (SSR/SGR/CIR), and timeline.
+- [PAPER_DRAFT.md](./PAPER_DRAFT.md) — paper-skeleton tracking which
+  numbers are measured vs. projected/hypothesized.
+- [BLOG.md](./BLOG.md) — plain-language summary for a non-academic
+  audience, including an honest status update on what's implemented.
+- [results/README.md](./results/README.md) — what's in `results/` and
+  what is intentionally not there yet.
 
 ## Quickstart
 
 ```bash
-pip install -e ".[dev]"
-pytest tests/ -v
+pip install -e .
+python scripts/run_demo.py
 ```
 
-```python
-from codebench.core import CodeTask, TaskDifficulty, pass_at_k
-from codebench.evaluate import leaderboard
+The demo above uses **synthetic, seeded-random data** (see
+`src/codebench/data.py::make_benchmark`) to validate the scoring pipeline.
+It is not a real evaluation of any coding agent.
 
-# Compute pass@3 given 10 samples, 5 correct
-print(pass_at_k(n=10, c=5, k=3))
+For a baseline experiment that actually executes real code (the 10 sample
+tasks' reference solutions) rather than drawing from a random number
+generator, run:
+
+```bash
+python experiments/exp0_baseline.py
 ```
 
----
+See the `experiments/exp0_baseline.py` module docstring and
+`results/README.md` for exactly what this does and does not prove.
+
+## Benchmark Design
+
+Each **CodeTask** is drawn from a real or synthetic repository and includes:
+- A natural-language `description`
+- A `test_file` with unit tests the agent's code must pass
+- A `reference_solution` for comparison
+- A `difficulty` rating: EASY / MEDIUM / HARD
+
+Agents submit **generated code** along with metadata (tool calls, latency, cost).
+An **ExecutionResult** captures how many tests passed and any regressions introduced.
+
+## Eval Metrics
+
+| Metric | Formula | Notes |
+|--------|---------|-------|
+| Pass Rate | tests_passed / tests_total | Primary metric |
+| Pass@k | Unbiased estimator (Chen et al. 2021) | k=1,5,10 |
+| Regression Rate | regressions / tests_total | Lower is better |
+| Tool Efficiency | max(0, 1 − calls/max_calls) | Rewards concise tool use |
+| Cost-Adjusted Score | pass_rate / log1p(cost) | Rewards cheap solutions |
+
+## Agent Comparison Table
+
+| Agent | Pass@1 | Pass@5 | Latency (ms) | Cost (USD) |
+|-------|--------|--------|-------------|------------|
+| anote-code | — | — | — | — |
+| claude-code | — | — | — | — |
+| codex | — | — | — | — |
+| gemini-code | — | — | — | — |
+| copilot | — | — | — | — |
+
+This table is intentionally empty: no real agent has been run against a
+real task set yet. See `experiments/exp0_baseline.py` for the first script
+that executes real code, and `PAPER_DRAFT.md` for the plan to populate this
+table with measured (not projected) numbers.
+
+## Venues
+
+- **DAI 2026** — Distributed AI workshop
+- **AAAI 2027** — Main track, AI for Software Engineering
 
 ## Citation
 
 ```bibtex
-@misc{anote2024codebench,
-  title  = {AnoteCodeBench: Benchmarking Enterprise Code-Generation Agents},
-  author = {Anote AI},
-  year   = {2024},
-  url    = {https://github.com/anote-ai/research-codebench}
+@misc{codebench2026,
+  title   = {CodeBench: A Repository-Level Benchmark for AI Coding Agents},
+  author  = {Anote AI},
+  year    = {2026},
+  url     = {https://github.com/anote-ai/research-codebench}
 }
 ```
