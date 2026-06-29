@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 import re
-from typing import Dict, List
+from typing import Dict, List, Tuple
 
 from .core import AgentSubmission, ComplexityScore, ExecutionResult, TestSuite
 
@@ -149,3 +149,71 @@ def _estimate_pass_at_k(results: List[ExecutionResult], k: int) -> float:
     for r in results:
         scores.append(pass_at_k(max(r.tests_total, k), r.tests_passed, k))
     return sum(scores) / len(scores)
+
+
+def reliability_at_k(results: List[ExecutionResult], k: int = 5) -> float:
+    """Correct operationalization of Chen et al. (2021) pass@k.
+
+    n = independent rollouts per (task, agent)
+    c = rollouts where execution_success is True (all tests pass)
+
+    Fixes the category error in _estimate_pass_at_k, which uses tests_total
+    and tests_passed (within-submission test counts) instead of rollout counts.
+    """
+    from .core import pass_at_k
+
+    grouped: Dict[Tuple[str, str], List[ExecutionResult]] = {}
+    for r in results:
+        grouped.setdefault((r.task_id, r.agent_name), []).append(r)
+
+    scores = []
+    for rollouts in grouped.values():
+        n = len(rollouts)
+        c = sum(1 for r in rollouts if r.execution_success)
+        scores.append(pass_at_k(n, c, min(k, n)))
+    return sum(scores) / len(scores) if scores else 0.0
+
+
+def single_rollout_proxy(
+    result: ExecutionResult,
+    submission: AgentSubmission,
+) -> float:
+    """Cheap single-rollout proxy for reliability.
+
+    proxy = pass_rate × (1 − regression_rate) × tool_efficiency_score
+    Valid as reliability substitute only if Spearman ρ ≥ 0.70 (H3).
+    """
+    pr = result.pass_rate
+    reg = result.regression_count / max(result.tests_total, 1)
+    eff = max(0.0, 1.0 - submission.tool_calls_used / 20)
+    return pr * (1.0 - reg) * eff
+
+
+def security_adjusted_reliability_at_k(
+    results: List[ExecutionResult],
+    submissions: List[AgentSubmission],
+    k: int = 5,
+    security_threshold: float = 0.80,
+) -> float:
+    """reliability@k counting only rollouts that are both secure and correct.
+
+    A rollout counts toward c if execution_success is True AND
+    security_score(generated_code) >= security_threshold.
+    """
+    from .core import pass_at_k
+
+    sub_map: Dict[Tuple[str, str], AgentSubmission] = {
+        (s.task_id, s.agent_name): s for s in submissions
+    }
+    grouped: Dict[Tuple[str, str], List[ExecutionResult]] = {}
+    for r in results:
+        grouped.setdefault((r.task_id, r.agent_name), []).append(r)
+
+    scores = []
+    for (task_id, agent_name), rollouts in grouped.items():
+        sub = sub_map.get((task_id, agent_name))
+        sec = security_score(sub.generated_code) if sub else 1.0
+        n = len(rollouts)
+        c = sum(1 for r in rollouts if r.execution_success and sec >= security_threshold)
+        scores.append(pass_at_k(n, c, min(k, n)))
+    return sum(scores) / len(scores) if scores else 0.0
