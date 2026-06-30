@@ -261,6 +261,9 @@ def make_rollout_benchmark(
     Per-rollout pass rates are sampled from a truncated Gaussian around true_skill.
     execution_success = True iff all tests pass (tests_passed == tests_total).
     """
+    if n_rollouts < 1:
+        raise ValueError(f"n_rollouts must be >= 1, got {n_rollouts}")
+
     if agents is None:
         agents = ["anote-code", "claude-code", "codex"]
 
