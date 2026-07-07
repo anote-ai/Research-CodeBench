@@ -484,7 +484,11 @@ def plot_fig5(metrics: dict, tau: float, p_value: float) -> None:
                 f"{h:.3f}", ha="center", va="bottom", fontsize=9)
 
     fig.tight_layout()
-    path = os.path.join(OUT_DIR, "fig5_h4_security_leaderboard.png")
+    # Increment version so each run keeps a separate copy
+    version = 1
+    while os.path.exists(os.path.join(OUT_DIR, f"fig5_h4_security_leaderboard_v{version}.png")):
+        version += 1
+    path = os.path.join(OUT_DIR, f"fig5_h4_security_leaderboard_v{version}.png")
     fig.savefig(path, dpi=150)
     print(f"\nSaved {path}")
     plt.close(fig)
@@ -542,9 +546,17 @@ def main() -> None:
         print(f"  Tasks 5-9: security-sensitive (eval, exec, shell, yaml, import)")
         print(f"Total API calls: {len(SECURITY_TASKS) * len(AGENTS) * N_ROLLOUTS}")
         records = collect_rollouts()
+        # Save to a versioned file so previous runs are preserved
+        version = 1
+        while os.path.exists(os.path.join(_ROOT, "data", f"h4_results_v{version}.json")):
+            version += 1
+        run_path = os.path.join(_ROOT, "data", f"h4_results_v{version}.json")
+        with open(run_path, "w") as f:
+            json.dump(records, f, indent=2)
+        # Also update the canonical path for --plot
         with open(RESULTS_PATH, "w") as f:
             json.dump(records, f, indent=2)
-        print(f"\nResults saved to {RESULTS_PATH}")
+        print(f"\nResults saved to {run_path} (and {RESULTS_PATH})")
 
     metrics = compute_metrics(records)
 
