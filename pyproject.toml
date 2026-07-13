@@ -17,6 +17,9 @@ dependencies = [
     "tqdm>=4.65",
 ]
 
+[project.optional-dependencies]
+eval = ["swebench>=2.1"]
+
 [tool.setuptools.packages.find]
 where = ["src"]
 

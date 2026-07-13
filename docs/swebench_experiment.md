@@ -63,41 +63,78 @@ sampled task in the official SWE-bench harness format:
 
 ### 3. Run agents to generate patches
 
-For each task, give the agent only the agent-safe fields (`task.description`,
-`task.repo`, `base_commit`, tags). The agent checks out `repo` at
-`base_commit`, works on the issue, and produces a unified diff. Fill that diff
-into the `model_patch` field of the corresponding template line. (Full agent
-automation is intentionally not implemented yet.)
+`scripts/run_swebench_agent.py` automates real attempts. Per task × attempt it
+checks out the target repo at `base_commit` in an isolated git worktree
+(clones are cached under `workspaces/repos/`), runs your agent command there,
+captures `git diff` against `base_commit` as `model_patch`, and writes one
+official predictions JSONL per attempt index.
+
+```bash
+# dry-run the whole pipeline first (no real agent, empty patches)
+python scripts/run_swebench_agent.py --agent-cmd noop --run-name dryrun
+
+# 3 independent attempts per task with Claude Code
+python scripts/run_swebench_agent.py \
+    --model-name anote-code --attempts 3 --timeout 1800 --run-name v1 \
+    --agent-cmd 'claude -p "$(cat {prompt_file})" --permission-mode acceptEdits'
+# → predictions/v1_attempt1.jsonl, v1_attempt2.jsonl, v1_attempt3.jsonl
+```
+
+`--agent-cmd` is a shell template with `{prompt_file}`, `{workdir}`,
+`{instance_id}`, and `{repo}` placeholders, so any agent CLI plugs in. The
+agent's prompt and working directory contain only agent-safe data — the
+runner strips `hidden_reference` at load time (`load_agent_safe_tasks`) and
+never writes gold fields into prompts, logs, or attempt records
+(`attempts/{run}/{instance}/attempt-{k}/`). Failed or timed-out attempts are
+recorded with an empty patch so they still count as rollouts. Use `--resume`
+to continue an interrupted run and `--attempts N` for multiple independent
+rollouts per task (the harness allows one prediction per instance per file,
+hence one predictions file per attempt index).
 
 ### 4. Evaluate with the official SWE-bench harness
 
 ```bash
-pip install swebench
-python -m swebench.harness.run_evaluation \
-    --dataset_name SWE-bench/SWE-bench_Verified \
-    --predictions_path predictions/swebench_predictions_template.jsonl \
-    --max_workers 4 \
-    --run_id codebench-swebench-v0
+pip install swebench   # or: pip install -e ".[eval]"
+for k in 1 2 3; do
+  python -m swebench.harness.run_evaluation \
+      --dataset_name SWE-bench/SWE-bench_Verified \
+      --predictions_path predictions/v1_attempt$k.jsonl \
+      --max_workers 2 \
+      --run_id v1-attempt$k
+done
 ```
 
-The harness applies each `model_patch` in a containerized environment and runs
-the hidden FAIL_TO_PASS / PASS_TO_PASS tests.
+The harness applies each `model_patch` in a containerized environment
+(Docker must be running) and runs the hidden FAIL_TO_PASS / PASS_TO_PASS
+tests. Each run writes a summary `{model}.{run_id}.json` plus per-instance
+reports under `logs/run_evaluation/{run_id}/{model}/`.
 
 ### 5. Convert results back into CodeBench metrics
 
-From the harness report, build `ExecutionResult` objects per (task, agent):
+```bash
+python scripts/convert_swebench_report.py \
+    --run-ids v1-attempt1 v1-attempt2 v1-attempt3 \
+    --model-name anote-code -k 3 \
+    --output data/swebench_results_anote-code_v1.json
+```
+
+Each evaluated (instance, attempt) becomes one `ExecutionResult` rollout:
 
 - `tests_passed` / `tests_total` — from the FAIL_TO_PASS + PASS_TO_PASS outcomes
 - `regression_count` — PASS_TO_PASS tests that now fail
 - `execution_success` — the instance is marked *resolved*
 
-These feed directly into the existing `codebench.evaluate` leaderboard
-(pass@k, regression rate, cost-adjusted score) without any API changes.
+Pooling one harness run per attempt gives exactly the rollout shape
+`codebench.evaluate.reliability_at_k` consumes (n = attempts, c = resolved
+attempts), replacing synthetic rollouts with real ones in the H-experiment
+pipeline — no API changes.
 
 ## Testing
 
-Adapter tests run offline with fake instances (no Hugging Face download):
+Adapter, runner, and results tests all run offline (fake instances, local
+git fixture repos, fixture harness reports — no Hugging Face download, no
+Docker):
 
 ```bash
-python -m pytest tests/test_swebench_adapter.py -q
+python -m pytest tests/test_swebench_adapter.py tests/test_swebench_runner.py tests/test_swebench_results.py -q
 ```
