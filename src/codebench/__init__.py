@@ -31,6 +31,12 @@ from .data import (
     make_complexity_score,
     make_benchmark,
 )
+from .swebench_adapter import (
+    load_swebench_verified,
+    swebench_instance_to_codetask,
+    write_swebench_sample,
+    write_predictions_jsonl,
+)
 
 __all__ = [
     "TaskDifficulty",
@@ -58,4 +64,8 @@ __all__ = [
     "make_test_suite",
     "make_complexity_score",
     "make_benchmark",
+    "load_swebench_verified",
+    "swebench_instance_to_codetask",
+    "write_swebench_sample",
+    "write_predictions_jsonl",
 ]

@@ -4,3 +4,7 @@ __pycache__/
 *.pyc
 dist/
 build/
+
+# Regenerable SWE-bench artifacts (sample contains gold patches — keep out of git)
+data/swebench_verified_sample.jsonl
+predictions/swebench_predictions_template.jsonl

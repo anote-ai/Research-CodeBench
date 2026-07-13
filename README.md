@@ -12,6 +12,21 @@ pip install -e .
 python scripts/run_demo.py
 ```
 
+## SWE-bench Verified Tasks
+
+CodeBench can load real-world tasks from
+[SWE-bench Verified](https://huggingface.co/datasets/SWE-bench/SWE-bench_Verified)
+in place of the synthetic samples:
+
+```bash
+python scripts/prepare_swebench_sample.py            # sample 5 tasks
+python scripts/create_swebench_predictions_template.py
+```
+
+See [docs/swebench_experiment.md](docs/swebench_experiment.md) for the full
+workflow, including the leakage policy (gold patches are never shown to agents)
+and evaluation with the official SWE-bench harness.
+
 ## Benchmark Design
 
 Each **CodeTask** is drawn from a real or synthetic repository and includes:
