@@ -8,3 +8,9 @@ build/
 # Regenerable SWE-bench artifacts (sample contains gold patches — keep out of git)
 data/swebench_verified_sample.jsonl
 predictions/swebench_predictions_template.jsonl
+
+# SWE-bench runner artifacts (repo clones, per-attempt logs, raw prediction runs)
+workspaces/
+attempts/
+predictions/*.jsonl
+!predictions/*_v*.jsonl

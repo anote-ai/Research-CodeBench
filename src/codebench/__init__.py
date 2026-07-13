@@ -37,6 +37,8 @@ from .swebench_adapter import (
     write_swebench_sample,
     write_predictions_jsonl,
 )
+from .swebench_runner import run_swebench_attempts
+from .swebench_results import harness_report_to_execution_results
 
 __all__ = [
     "TaskDifficulty",
@@ -68,4 +70,6 @@ __all__ = [
     "swebench_instance_to_codetask",
     "write_swebench_sample",
     "write_predictions_jsonl",
+    "run_swebench_attempts",
+    "harness_report_to_execution_results",
 ]
