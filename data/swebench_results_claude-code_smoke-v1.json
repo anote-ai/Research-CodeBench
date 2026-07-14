@@ -1,0 +1,71 @@
+{
+  "model": "claude-code",
+  "run_ids": [
+    "smoke-v1-five-tasks"
+  ],
+  "k": 1,
+  "per_run": {
+    "smoke-v1-five-tasks": {
+      "n_instances": 5,
+      "resolved": 1
+    }
+  },
+  "aggregates": {
+    "n_rollouts": 5,
+    "n_tasks": 5,
+    "resolved_rollouts": 1,
+    "resolve_rate": 0.2,
+    "mean_pass_rate": 0.8048569954297509,
+    "mean_regression_rate": 0.15388888888888888,
+    "reliability@1": 0.2,
+    "tasks": [
+      "astropy__astropy-12907",
+      "astropy__astropy-13033",
+      "astropy__astropy-13236",
+      "astropy__astropy-13398",
+      "astropy__astropy-13453"
+    ]
+  },
+  "rollouts": [
+    {
+      "task_id": "astropy__astropy-12907",
+      "agent_name": "claude-code",
+      "tests_passed": 15,
+      "tests_total": 15,
+      "regression_count": 0,
+      "execution_success": true
+    },
+    {
+      "task_id": "astropy__astropy-13033",
+      "agent_name": "claude-code",
+      "tests_passed": 20,
+      "tests_total": 21,
+      "regression_count": 0,
+      "execution_success": false
+    },
+    {
+      "task_id": "astropy__astropy-13236",
+      "agent_name": "claude-code",
+      "tests_passed": 644,
+      "tests_total": 646,
+      "regression_count": 0,
+      "execution_success": false
+    },
+    {
+      "task_id": "astropy__astropy-13398",
+      "agent_name": "claude-code",
+      "tests_passed": 63,
+      "tests_total": 72,
+      "regression_count": 5,
+      "execution_success": false
+    },
+    {
+      "task_id": "astropy__astropy-13453",
+      "agent_name": "claude-code",
+      "tests_passed": 2,
+      "tests_total": 10,
+      "regression_count": 7,
+      "execution_success": false
+    }
+  ]
+}
