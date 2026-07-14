@@ -14,3 +14,8 @@ workspaces/
 attempts/
 predictions/*.jsonl
 !predictions/*_v*.jsonl
+
+# SWE-bench harness artifacts (evaluation logs, run summary reports)
+logs/
+claude-code.smoke-*.json
+*.smoke-*.json
